@@ -6,32 +6,59 @@ import pandas as pd
 import re
 import os
 
-st.set_page_config(page_title="MediGuide AI - Model 2", layout="wide")
+st.set_page_config(page_title="MediGuide AI - TFIDF", layout="wide")
 
 BASE = os.path.dirname(__file__)
 
 # ================================
-# SIDEBAR
+# STYLE
 # ================================
-st.sidebar.title("MediGuide AI")
-st.sidebar.success("Model: TF-IDF")
-st.sidebar.info("Free-text symptom prediction.")
+st.markdown("""
+<style>
+[data-testid="stAppViewContainer"] {
+    background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+}
+.title {
+    text-align: center;
+    font-size: 48px;
+    font-weight: bold;
+    color: #00FFB2;
+}
+.subtitle {
+    text-align: center;
+    font-size: 18px;
+    color: #bbbbbb;
+    margin-bottom: 30px;
+}
+.card {
+    background-color: #111;
+    padding: 20px;
+    border-radius: 12px;
+    border: 1px solid #00FFB2;
+    box-shadow: 0px 0px 15px rgba(0,255,178,0.2);
+}
+.stButton>button {
+    background-color: #00FFB2;
+    color: black;
+    font-weight: bold;
+    border-radius: 8px;
+    padding: 10px 20px;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # ================================
 # HEADER
 # ================================
-st.markdown("""
-<h1 style='text-align:center; color:#4CAF50;'>MediGuide AI</h1>
-<p style='text-align:center; color:gray;'>TF-IDF Disease Prediction</p>
-""", unsafe_allow_html=True)
-
+st.markdown('<p class="title">MediGuide AI</p>', unsafe_allow_html=True)
+st.markdown('<p class="subtitle">TF-IDF Disease Prediction</p>', unsafe_allow_html=True)
 st.markdown("---")
 
 # ================================
 # CLEAN
 # ================================
 def clean(t):
-    t = str(t).lower().strip()
+    t = str(t).lower()
     t = re.sub(r"[^a-z0-9 ]", " ", t)
     return re.sub(r"\s+", " ", t)
 
@@ -51,59 +78,52 @@ symptoms = set()
 
 for col in df.columns:
     if "Symptom" in col:
-        symptoms.update(df[col].dropna().tolist())
+        symptoms.update(df[col].dropna())
 
 symptom_list = sorted(symptoms)
 
 # ================================
-# INPUT UI
+# INPUT
 # ================================
 col1, col2 = st.columns(2)
 
 with col1:
-    selected = st.multiselect("🧠 Select Symptoms", symptom_list)
+    selected = st.multiselect("Select Symptoms", symptom_list)
 
 with col2:
-    text = st.text_area("✍️ Type Symptoms")
+    text = st.text_area("Type Symptoms")
 
 center = st.columns([1,2,1])
 with center[1]:
-    diagnose = st.button("🔍 Diagnose")
+    run = st.button("🔍 Diagnose")
 
 # ================================
-# PREDICTION
+# PREDICT
 # ================================
-if diagnose:
+if run:
     combined = " ".join(selected) + " " + text
 
     if not combined.strip():
         st.warning("Enter symptoms")
     else:
         probs = model.predict_proba([combined])[0]
-        idx = np.argmax(probs)
+        i = np.argmax(probs)
 
-        disease = model.classes_[idx]
-        conf = probs[idx]
+        disease = model.classes_[i]
+        conf = probs[i]
 
         key = disease.lower().replace(" ", "")
 
-        st.markdown("---")
+        st.markdown('<div class="card">', unsafe_allow_html=True)
 
-        c1, c2, c3 = st.columns(3)
+        st.markdown(f"## 🧾 Prediction: {disease}")
+        st.write(f"Confidence: {conf*100:.2f}%")
 
-        c1.metric("Disease", disease)
-        c2.metric("Confidence", f"{conf*100:.2f}%")
-        c3.metric("Model", "TF-IDF")
+        st.markdown("### 📄 Description")
+        st.write(desc_map.get(key, "No description"))
 
-        st.markdown("---")
+        st.markdown("### 🛡️ Precautions")
+        for p in prec_map.get(key, []):
+            st.write("✔", p)
 
-        colA, colB = st.columns(2)
-
-        with colA:
-            st.markdown("### 📄 Description")
-            st.info(desc_map.get(key, "No description"))
-
-        with colB:
-            st.markdown("### 🛡️ Precautions")
-            for p in prec_map.get(key, []):
-                st.success(p)
+        st.markdown('</div>', unsafe_allow_html=True)
