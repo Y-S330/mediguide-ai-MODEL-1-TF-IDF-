@@ -207,31 +207,39 @@ def _shorten_text(text, max_chars=450):
         return text
     cut = text[:max_chars]
     last = cut.rfind(".")
-    return cut[:last + 1] if last > 220 else cut.rstrip() + "..."
+    if last != -1 and last > 220:
+        return cut[:last + 1]
+    return cut.rstrip() + "..."
 
 def _tokenize(text):
     return [tok for tok in _clean(text).split() if len(tok) >= 3]
 
 def _match_lookup(key, mapping):
     key = _clean(key)
-
     if key in mapping:
         return mapping[key]
 
     key_tokens = set(key.split())
+    if not key_tokens:
+        return None
+
     best_match = None
-    best_score = 0
+    best_score = 0.0
 
     for k in mapping:
         k_clean = _clean(k)
         k_tokens = set(k_clean.split())
-        score = len(key_tokens & k_tokens)
+        if not k_tokens:
+            continue
+
+        overlap = len(key_tokens & k_tokens)
+        score = overlap / max(len(key_tokens), len(k_tokens))
 
         if score > best_score:
             best_score = score
             best_match = k
 
-    if best_match and best_score >= 1:
+    if best_match and best_score >= 0.5:
         return mapping[best_match]
 
     return None
@@ -281,12 +289,12 @@ def load_medquad():
     if os.path.exists(pkl_path):
         data = joblib.load(pkl_path)
         if isinstance(data, pd.DataFrame):
-            return data.copy()
+            return data
 
     if os.path.exists(csv_path):
         data = pd.read_csv(csv_path)
         if isinstance(data, pd.DataFrame):
-            return data.copy()
+            return data
 
     return None
 
@@ -395,7 +403,7 @@ def normalize_free_text(text):
             remaining = re.sub(pattern, " ", remaining)
 
     leftover = re.sub(r"\s+", " ", remaining).strip()
-    if leftover:
+    if leftover and len(leftover.split()) <= 3:
         found.append(leftover)
 
     return " ".join(found) if found else text
@@ -432,23 +440,27 @@ def retrieve_treatment_from_medquad(predicted_disease, top_k=2, min_token_hits=2
     if not tokens:
         return []
 
-    df = medquad_df.copy()
-
-    if "question_clean" in df.columns:
-        df["q_clean"] = df["question_clean"].fillna("").astype(str).apply(_clean)
-    elif "question" in df.columns:
-        df["q_clean"] = df["question"].fillna("").astype(str).apply(_clean)
+    if "question_clean" in medquad_df.columns:
+        q_clean = medquad_df["question_clean"].fillna("").astype(str).apply(_clean)
+    elif "question" in medquad_df.columns:
+        q_clean = medquad_df["question"].fillna("").astype(str).apply(_clean)
     else:
         return []
 
-    if "answer_clean" in df.columns:
-        df["a_clean"] = df["answer_clean"].fillna("").astype(str)
-        df["a_search"] = df["answer_clean"].fillna("").astype(str).apply(_clean)
-    elif "answer" in df.columns:
-        df["a_clean"] = df["answer"].fillna("").astype(str)
-        df["a_search"] = df["answer"].fillna("").astype(str).apply(_clean)
+    if "answer_clean" in medquad_df.columns:
+        a_clean = medquad_df["answer_clean"].fillna("").astype(str)
+        a_search = medquad_df["answer_clean"].fillna("").astype(str).apply(_clean)
+    elif "answer" in medquad_df.columns:
+        a_clean = medquad_df["answer"].fillna("").astype(str)
+        a_search = medquad_df["answer"].fillna("").astype(str).apply(_clean)
     else:
         return []
+
+    df = pd.DataFrame({
+        "q_clean": q_clean,
+        "a_clean": a_clean,
+        "a_search": a_search,
+    })
 
     df = df[(df["q_clean"] != "") & (df["a_clean"].str.strip() != "")]
     if df.empty:
@@ -593,7 +605,7 @@ with left:
         key="free_text"
     )
 
-    combined_text = " ".join(selected_syms) + " " + free_text
+    combined_text = " ".join(selected_syms + [free_text]).strip()
     recognized_count = count_recognized(free_text)
     has_dropdown_symptoms = len(selected_syms) > 0
 
